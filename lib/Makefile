@@ -1,6 +1,7 @@
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra -fPIC -O2
+CXXFLAGS = -std=c++17 -fPIC -shared 
+LIB = -pthread
 
 # Targets
 STATIC_LIB = libzero_copy_read.a
@@ -13,7 +14,7 @@ all: $(STATIC_LIB) $(SHARED_LIB)
 
 # Build object file
 zero-copy-read-library.o: zero-copy-read-library.cpp $(HEADERS)
-	$(CXX) $(CXXFLAGS) -c zero-copy-read-library.cpp -o $@
+	$(CXX) $(CXXFLAGS) -c zero-copy-read-library.cpp -o $@ $(LIB)
 
 # Static library
 $(STATIC_LIB): $(OBJS)
