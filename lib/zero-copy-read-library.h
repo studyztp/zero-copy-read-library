@@ -22,7 +22,6 @@
 #define SUCCESS_CODE 0
 #define MAX_BUFFER_SIZE 1024
 
-
 class ZeroCopyRead {
 private:
     int fd;                        // File descriptor (should be an int, not int*)
@@ -40,11 +39,11 @@ private:
 
 public:
     // Constructor
-    explicit ZeroCopyRead(const char* file_path);
+    explicit ZeroCopyRead(const char* file_path, const char* lock_file_path);
     // Destructor
     ~ZeroCopyRead();
 
-    void atomicReadLine(char* buffer);
+    size_t atomicReadLine(char* buffer);
 
     void readLockfile();
 

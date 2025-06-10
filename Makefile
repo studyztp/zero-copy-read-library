@@ -2,7 +2,7 @@ CXX = g++
 CXXFLAGS = -std=c++17 -Wall -Wextra -O2
 
 LIB_PATH = ./lib
-LIB_OBJ = -L${LIB_PATH} -lzero_copy_read -Wl,-rpath=$(LIB_PATH) -pthread
+LIB_OBJ = -L${LIB_PATH} -lzero_copy_read -lwrite -Wl,-rpath=$(LIB_PATH) -pthread
 INCLUDE_PATH = -I$(LIB_PATH)
 
 MAIN_SRC = test-program.cpp

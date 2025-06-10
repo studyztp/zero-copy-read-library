@@ -1,6 +1,6 @@
 #include "zero-copy-read-library.h"
 
-ZeroCopyRead::ZeroCopyRead(const char* file_path) : current_position(0), ready(false) {
+ZeroCopyRead::ZeroCopyRead(const char* file_path, const char* lock_file_path) : current_position(0), ready(false) {
     struct stat file_stat;
     fd = open(file_path, O_RDONLY);
     if (fd == -1) {
@@ -13,14 +13,13 @@ ZeroCopyRead::ZeroCopyRead(const char* file_path) : current_position(0), ready(f
     }
     file_size = file_stat.st_size;
     file_path_ = file_path;
-    lock_file_path_ = "lockfile.lock"; // Example lock file path
+    lock_file_path_ = lock_file_path;
 
     lock_fd = open(lock_file_path_.c_str(), O_RDWR);
     if (lock_fd == -1) {
         perror("Failed to open lock file");
         throw std::runtime_error("Failed to open lock file");
     }
-    lock_mmap_ptr = mmap(nullptr, sizeof(uint64_t) + MAX_BUFFER_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, lock_fd, 0);
 
     if (file_size == 0) {
         throw std::runtime_error("Cannot mmap empty file");
@@ -41,48 +40,60 @@ ZeroCopyRead::~ZeroCopyRead() {
     close(fd);
 }
 
-void ZeroCopyRead::atomicReadLine(char* buffer) {
-    uint64_t version1, version2;
-    do {
-        // Step 1: read version before
-        version1 = reinterpret_cast<std::atomic<uint64_t>*>(lock_mmap_ptr)->load(std::memory_order_acquire);
+size_t ZeroCopyRead::atomicReadLine(char* buffer) {
+    struct stat file_stat;
+    if (fstat(lock_fd, &file_stat) == -1) {
+        perror("fstat failed");
+        throw std::runtime_error("Failed to get lock file size");
+    }
+    size_t lock_file_file_size = file_stat.st_size;
 
-        // Step 2: if version is odd, writer in progress — retry
-        if (version1 % 2 != 0) continue;
+    if (lock_file_file_size == 0) {
+        return 0; // No data to read
+    }
 
-        // Step 3: read the string into buffer
-        const char* str_ptr = reinterpret_cast<const char*>(reinterpret_cast<const uint8_t*>(lock_mmap_ptr) + sizeof(uint64_t));
+    printf("Lock file size: %ld bytes\n", lock_file_file_size);
+    lock_mmap_ptr = mmap(nullptr, lock_file_file_size, PROT_READ | PROT_WRITE, MAP_SHARED, lock_fd, 0);
+    size_t char_to_read = lock_file_file_size / sizeof(char);
 
-        size_t i = 0;
-        while (i < sizeof(buffer) - 1) {
-            char c = str_ptr[i];
-            buffer[i] = c;
-            if (c == '\n') {
-                buffer[i + 1] = '\0';  // null-terminate
-                break;
-            } else if (c == '\0') {
-                buffer[i] = '\0';  // null-terminate if we hit the end of the string
-                break;
-            }
-            i++;
+    char* str_ptr = static_cast<char*>(lock_mmap_ptr);
+
+    size_t i = 0;
+    while (i < char_to_read) {
+        char c = str_ptr[i];
+        if (c == '\n') {
+            break;
+        } else if (c == '\0') {
+            break;
         }
+        buffer[i] = c;
+        i++;
+    }
 
-        // Step 4: read version again
-        version2 = reinterpret_cast<std::atomic<uint64_t>*>(lock_mmap_ptr)->load(std::memory_order_acquire);
+    return i;
 
-    } while (version1 != version2 || version1 % 2 != 0);
 }
 
 void ZeroCopyRead::readLockfile() {
-    syncFile(&lock_fd, lock_file_path_.c_str());
-    char buffer[1024];  // Make sure this is large enough
-    atomicReadLine(buffer);
-    while (std::strcmp(buffer, file_path_.c_str()) == 0) {
+    char buffer[MAX_BUFFER_SIZE];  // Make sure this is large enough
+    if (atomicReadLine(buffer) == 0) {
+        printf("No data read from lock file, exiting readLockfile.\n");
+        return; // No data to read
+    }
+    std::string read_buffer(buffer);
+    printf("Read lock file: %s\n", read_buffer.c_str());
+    printf("Expected file path: %s\n", file_path_.c_str());
+    while (std::strcmp(read_buffer.c_str(), file_path_.c_str()) == 0) {
         // Wait for the lock to be released
+        printf("Waiting for lock to be released...\n");
         syncFile(&lock_fd, lock_file_path_.c_str());
         memset(buffer, 0, sizeof(buffer)); // Clear the buffer
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        atomicReadLine(buffer);
+        if (atomicReadLine(buffer) == 0) {
+            printf("No data read from lock file, exiting wait loop.\n");
+            break; // Exit if no data is read
+        }
+        std::string read_buffer(buffer);
     }
     // Lock is released, we can proceed
 }
@@ -92,8 +103,8 @@ size_t ZeroCopyRead::readData(size_t offset, size_t size, void* buffer) {
         return 0; // Out of bounds
     }
 
-    syncFile(&fd, file_path_.c_str());
     readLockfile();
+    syncFile(&fd, file_path_.c_str());
     
     memcpy(buffer, static_cast<char*>(base_mmap_ptr) + offset, size);
     return size;
@@ -102,8 +113,9 @@ size_t ZeroCopyRead::readData(size_t offset, size_t size, void* buffer) {
 char ZeroCopyRead::operator*(){
     //  can not be a constant operator*() because it needs to modify the 
     // fd if the file is not valid or needs to be synced
-    syncFile(&fd, file_path_.c_str());
     readLockfile();
+    syncFile(&fd, file_path_.c_str());
+    
     return *iter_mmap_ptr;
 }
 
@@ -111,8 +123,10 @@ size_t ZeroCopyRead::operator++() {
     if (current_position + 1 >= file_size) {
         return ERROR_CODE; // End of file reached
     }
-    syncFile(&fd, file_path_.c_str());
+    
     readLockfile();
+    syncFile(&fd, file_path_.c_str());
+    
     iter_mmap_ptr++;
     current_position++;
     return SUCCESS_CODE; // Successfully moved to the next character
@@ -122,8 +136,10 @@ size_t ZeroCopyRead::operator--() {
     if (current_position == 0) {
         return ERROR_CODE; // Cannot move back, already at the start
     }
-    syncFile(&fd, file_path_.c_str());
+
     readLockfile();
+    syncFile(&fd, file_path_.c_str());
+    
     iter_mmap_ptr--;
     current_position--;
     return SUCCESS_CODE; // Successfully moved to the previous character
@@ -133,8 +149,9 @@ size_t ZeroCopyRead::operator+=(size_t offset) {
     if (current_position + offset >= file_size) {
         return ERROR_CODE; // Out of bounds
     }
-    syncFile(&fd, file_path_.c_str());
     readLockfile();
+    syncFile(&fd, file_path_.c_str());
+
     iter_mmap_ptr += offset;
     current_position += offset;
     return SUCCESS_CODE; // Successfully moved forward by offset
@@ -144,42 +161,45 @@ size_t ZeroCopyRead::operator-=(size_t offset) {
     if (current_position < offset) {
         return ERROR_CODE; // Out of bounds
     }
-    syncFile(&fd, file_path_.c_str());
+
     readLockfile();
+    syncFile(&fd, file_path_.c_str());
+    
     iter_mmap_ptr -= offset;
     current_position -= offset;
     return SUCCESS_CODE; // Successfully moved backward by offset
 }
 
 int ZeroCopyRead::operator-(ZeroCopyRead& other) {
-    syncFile(&fd, file_path_.c_str());
     readLockfile();
-    other.syncFile(&other.fd, other.file_path_.c_str());
+    syncFile(&fd, file_path_.c_str());
     other.readLockfile();
+    other.syncFile(&other.fd, other.file_path_.c_str());
+    
     return *reinterpret_cast<int*>(iter_mmap_ptr) - *reinterpret_cast<int*>(other.iter_mmap_ptr);
 }
 
 int ZeroCopyRead::operator+(ZeroCopyRead& other) {
-    syncFile(&fd, file_path_.c_str());
     readLockfile();
-    other.syncFile(&other.fd, other.file_path_.c_str());
+    syncFile(&fd, file_path_.c_str());
     other.readLockfile();
+    other.syncFile(&other.fd, other.file_path_.c_str());
     return *reinterpret_cast<int*>(iter_mmap_ptr) + *reinterpret_cast<int*>(other.iter_mmap_ptr);
 }
 
 int ZeroCopyRead::operator*(ZeroCopyRead& other) {
-    syncFile(&fd, file_path_.c_str());
     readLockfile();
-    other.syncFile(&other.fd, other.file_path_.c_str());
+    syncFile(&fd, file_path_.c_str());
     other.readLockfile();
+    other.syncFile(&other.fd, other.file_path_.c_str());
     return *reinterpret_cast<int*>(iter_mmap_ptr) * *reinterpret_cast<int*>(other.iter_mmap_ptr);
 }
 
 int ZeroCopyRead::operator/( ZeroCopyRead& other) {
-    syncFile(&fd, file_path_.c_str());
     readLockfile();
-    other.syncFile(&other.fd, other.file_path_.c_str());
+    syncFile(&fd, file_path_.c_str());
     other.readLockfile();
+    other.syncFile(&other.fd, other.file_path_.c_str());
     int right_value = *reinterpret_cast<int*>(other.iter_mmap_ptr);
     if (right_value == 0) {
         throw std::runtime_error("Division by zero");
