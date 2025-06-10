@@ -70,6 +70,12 @@ public:
                 perror("Failed to open file");
                 throw std::runtime_error("Failed to open file");
             } else {
+                struct stat file_stat;
+                if (fstat(*fd, &file_stat) == -1) {
+                    perror("fstat failed");
+                    throw std::runtime_error("Failed to get file size");
+                }
+                file_size = file_stat.st_size;
                 return SUCCESS_CODE; // File opened successfully
             }
         }

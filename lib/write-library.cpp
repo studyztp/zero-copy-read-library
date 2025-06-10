@@ -118,7 +118,6 @@ void WriteLibrary::writeData(const char* data, size_t size) {
             std::cerr << "Warning: File is empty after copy, no data to write." << std::endl;
         }
         size_written = 0;
-        
     }
 
     ssize_t bytes_written = write(fd, data, size);
