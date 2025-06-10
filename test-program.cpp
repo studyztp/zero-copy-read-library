@@ -33,17 +33,17 @@ void writerTask(const char* data_file, const char* lock_file) {
 void readerTask(const char* data_file, const char* lock_file) {
     try {
         ZeroCopyRead reader(data_file, lock_file);
+        char character;
         for (int i = 1; i <= NUM_ITERATIONS; ++i) {
             // Read full file content
-            size_t fileSize = reader.getFileSize();
-            std::vector<char> buffer(fileSize + 1, 0);
-            size_t bytesRead = reader.readData(0, fileSize, buffer.data());
-            std::cout << "[Reader] Iteration " << i << ", bytesRead=" << bytesRead << "\n";
-            std::cout << buffer.data();
+            character = *reader;
+            if (++reader) {
+                std::cerr << "Error reading character at iteration " << i << std::endl;
+                continue; // Skip to next iteration if read fails
+            }
+            std::cout << "[Reader] Iteration " << i << ", bytesRead=" << character << "\n";
             std::cout << std::endl;
 
-            // Prepare for next iteration
-            reader.resetIterator();
             std::this_thread::sleep_for(std::chrono::milliseconds(READ_DELAY_MS));
         }
     } catch (const std::exception& e) {
