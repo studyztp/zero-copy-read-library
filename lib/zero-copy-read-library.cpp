@@ -52,7 +52,6 @@ size_t ZeroCopyRead::atomicReadLine(char* buffer) {
         return 0; // No data to read
     }
 
-    printf("Lock file size: %ld bytes\n", lock_file_file_size);
     lock_mmap_ptr = mmap(nullptr, lock_file_file_size, PROT_READ | PROT_WRITE, MAP_SHARED, lock_fd, 0);
     size_t char_to_read = lock_file_file_size / sizeof(char);
 
@@ -81,11 +80,8 @@ void ZeroCopyRead::readLockfile() {
         return; // No data to read
     }
     std::string read_buffer(buffer);
-    printf("Read lock file: %s\n", read_buffer.c_str());
-    printf("Expected file path: %s\n", file_path_.c_str());
     while (std::strcmp(read_buffer.c_str(), file_path_.c_str()) == 0) {
         // Wait for the lock to be released
-        printf("Waiting for lock to be released...\n");
         syncFile(&lock_fd, lock_file_path_.c_str());
         memset(buffer, 0, sizeof(buffer)); // Clear the buffer
         std::this_thread::sleep_for(std::chrono::milliseconds(100));

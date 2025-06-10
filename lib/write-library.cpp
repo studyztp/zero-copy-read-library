@@ -77,13 +77,47 @@ void WriteLibrary::unlockFile() {
 
 void WriteLibrary::writeData(const char* data, size_t size) {
     lockFile();
-    if (size + size_written > file_size) {
-        
-        int ret = std::system("echo hi");
+    while (size + size_written > file_size) {
+
+        std::string cmd = "sudo cp " + file_path_ + " /tmp/tmpfile";
+        close(fd);
+        int ret = std::system(cmd.c_str());
         if (ret != 0) {
-            perror("Failed to write data: size exceeds file size");
-            throw std::runtime_error("Failed to write data: size exceeds file size");
+            throw std::runtime_error("Failed to execute system command: " + cmd);
         }
+        printf("cp %s /tmp/tmpfile\n", file_path_.c_str());
+        cmd = "sudo famfs rm " + file_path_;
+        ret = std::system(cmd.c_str());
+        if (ret != 0) {
+            throw std::runtime_error("Failed to execute system command: " + cmd);
+        }
+        printf("famfs rm %s\n", file_path_.c_str());
+        cmd = "sudo famfs cp -s 2M /tmp/tmpfile " + file_path_;
+        ret = std::system(cmd.c_str());
+        if (ret != 0) {
+            throw std::runtime_error("Failed to execute system command: " + cmd);
+        }
+        printf("famfs cp -s 2M /tmp/tmpfile %s\n", file_path_.c_str());
+
+        fd = open(file_path_.c_str(), O_WRONLY);
+        if (fd < 0) {
+            perror("Failed to open data file after copy");
+            throw std::runtime_error("Failed to open data file after copy");
+        }
+        struct stat file_stat;
+        if (fstat(fd, &file_stat) == -1) {
+            perror("Failed to get file size after copy");
+            close(fd);
+            throw std::runtime_error("Failed to get file size after copy");
+        }
+        size_t logical_size = file_stat.st_size;
+        size_t blocks_used = (logical_size + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        size_t allocated_bytes = blocks_used * BLOCK_SIZE;
+        file_size = allocated_bytes - logical_size;
+        if (file_size == 0) {
+            std::cerr << "Warning: File is empty after copy, no data to write." << std::endl;
+        }
+        size_written = 0;
         
     }
 
@@ -94,6 +128,5 @@ void WriteLibrary::writeData(const char* data, size_t size) {
     }
 
     size_written += bytes_written;
-    file_size += INCREASE_BLOCK * BLOCK_SIZE;
     unlockFile();
 }
