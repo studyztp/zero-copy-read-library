@@ -76,7 +76,6 @@ size_t ZeroCopyRead::atomicReadLine(char* buffer) {
 void ZeroCopyRead::readLockfile() {
     char buffer[MAX_BUFFER_SIZE];  // Make sure this is large enough
     if (atomicReadLine(buffer) == 0) {
-        printf("No data read from lock file, exiting readLockfile.\n");
         return; // No data to read
     }
     std::string read_buffer(buffer);
@@ -86,7 +85,6 @@ void ZeroCopyRead::readLockfile() {
         memset(buffer, 0, sizeof(buffer)); // Clear the buffer
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         if (atomicReadLine(buffer) == 0) {
-            printf("No data read from lock file, exiting wait loop.\n");
             break; // Exit if no data is read
         }
         std::string read_buffer(buffer);
