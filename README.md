@@ -1,6 +1,6 @@
 Got it! Here's the entire README content written cleanly and fully as a `.md` file from top to bottom, suitable for direct use as `README.md` in your repo:
 
-```markdown
+
 # Zero-Copy Read Library
 
 This repository provides a **zero-copy read library** and a **coordinated write library** designed for efficient file access in disaggregated or tiered memory systems (e.g., DAX, CXL). It enables a *reader* and a *writer* process to communicate through a memory-mapped file and a lockfile, allowing fast read operations without data duplication or page cache interference.
@@ -16,8 +16,6 @@ This repository provides a **zero-copy read library** and a **coordinated write 
 ## Directory Structure
 
 ```
-
-.
 ├── examples/                     # Example test programs for reading and writing
 ├── lib/
 │   ├── write-library.\*           # Writer-side implementation
@@ -26,8 +24,7 @@ This repository provides a **zero-copy read library** and a **coordinated write 
 │   ├── data.txt                  # Example data file
 │   └── lockfile.lock             # Example lock file
 ├── Makefile                      # Build script
-
-````
+```
 
 ## Build Instructions
 
