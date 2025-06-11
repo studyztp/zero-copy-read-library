@@ -51,11 +51,18 @@ void readerTask(const char* data_file, const char* lock_file) {
     }
 }
 
-int main() {
-    const char* data_file = "data.txt";
-    const char* lock_file = "lockfile.lock";
+int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        std::cerr << "Usage: " << argv[0] << " <data_file> <lock_file>\n";
+        return 1;
+    }
+    const char* data_file = argv[1];
+    const char* lock_file = argv[2];
 
-    std::cout << "Starting concurrency test with " << NUM_ITERATIONS << " iterations.\n";
+    std::cout << "Starting concurrency test on:\n"
+              << "  data file: " << data_file << "\n"
+              << "  lock file: " << lock_file << "\n"
+              << "  iterations: " << NUM_ITERATIONS << "\n\n";
 
     // Launch writer and reader in separate threads
     std::thread writerThread(writerTask, data_file, lock_file);
